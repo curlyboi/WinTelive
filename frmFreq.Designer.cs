@@ -29,8 +29,8 @@
         private void InitializeComponent()
         {
             this.components = new System.ComponentModel.Container();
-            System.Windows.Forms.DataGridViewCellStyle dataGridViewCellStyle3 = new System.Windows.Forms.DataGridViewCellStyle();
-            System.Windows.Forms.DataGridViewCellStyle dataGridViewCellStyle4 = new System.Windows.Forms.DataGridViewCellStyle();
+            System.Windows.Forms.DataGridViewCellStyle dataGridViewCellStyle1 = new System.Windows.Forms.DataGridViewCellStyle();
+            System.Windows.Forms.DataGridViewCellStyle dataGridViewCellStyle2 = new System.Windows.Forms.DataGridViewCellStyle();
             this.grdFreqs = new System.Windows.Forms.DataGridView();
             this.mccDataGridViewTextBoxColumn = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.mncDataGridViewTextBoxColumn = new System.Windows.Forms.DataGridViewTextBoxColumn();
@@ -65,12 +65,17 @@
             this.chkLockBase = new System.Windows.Forms.CheckBox();
             this.chkTuneNew = new System.Windows.Forms.CheckBox();
             this.txtBase = new System.Windows.Forms.TextBox();
+            this.btnTuneNew = new System.Windows.Forms.Button();
+            this.picFreqGraph = new System.Windows.Forms.PictureBox();
+            this.tmrRefresh = new System.Windows.Forms.Timer(this.components);
+            this.tmrAutotune = new System.Windows.Forms.Timer(this.components);
             ((System.ComponentModel.ISupportInitialize)(this.grdFreqs)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.tfreqBindingSource)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.grdUSIs)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.usiBindingSource)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.grdRXs)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.receiverBindingSource)).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)(this.picFreqGraph)).BeginInit();
             this.SuspendLayout();
             // 
             // grdFreqs
@@ -316,8 +321,8 @@
             // 
             this.lastseenDataGridViewTextBoxColumn.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.AllCells;
             this.lastseenDataGridViewTextBoxColumn.DataPropertyName = "lastseen";
-            dataGridViewCellStyle3.Format = "HH:mm:ss";
-            this.lastseenDataGridViewTextBoxColumn.DefaultCellStyle = dataGridViewCellStyle3;
+            dataGridViewCellStyle1.Format = "HH:mm:ss";
+            this.lastseenDataGridViewTextBoxColumn.DefaultCellStyle = dataGridViewCellStyle1;
             this.lastseenDataGridViewTextBoxColumn.HeaderText = "Seen";
             this.lastseenDataGridViewTextBoxColumn.Name = "lastseenDataGridViewTextBoxColumn";
             this.lastseenDataGridViewTextBoxColumn.ReadOnly = true;
@@ -327,8 +332,8 @@
             // 
             this.lastburstDataGridViewTextBoxColumn.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.AllCells;
             this.lastburstDataGridViewTextBoxColumn.DataPropertyName = "lastburst";
-            dataGridViewCellStyle4.Format = "HH:mm:ss";
-            this.lastburstDataGridViewTextBoxColumn.DefaultCellStyle = dataGridViewCellStyle4;
+            dataGridViewCellStyle2.Format = "HH:mm:ss";
+            this.lastburstDataGridViewTextBoxColumn.DefaultCellStyle = dataGridViewCellStyle2;
             this.lastburstDataGridViewTextBoxColumn.HeaderText = "Burst";
             this.lastburstDataGridViewTextBoxColumn.Name = "lastburstDataGridViewTextBoxColumn";
             this.lastburstDataGridViewTextBoxColumn.ReadOnly = true;
@@ -391,7 +396,7 @@
             this.lblBasefreq.Size = new System.Drawing.Size(108, 13);
             this.lblBasefreq.TabIndex = 7;
             this.lblBasefreq.Text = "Baseband frequency:";
-            this.lblBasefreq.DoubleClick += new System.EventHandler(this.lblBasefreq_Click);
+            this.lblBasefreq.DoubleClick += new System.EventHandler(this.lblBasefreq_Doubleclick);
             // 
             // chkLockBase
             // 
@@ -407,11 +412,11 @@
             // chkTuneNew
             // 
             this.chkTuneNew.AutoSize = true;
-            this.chkTuneNew.Location = new System.Drawing.Point(654, 304);
+            this.chkTuneNew.Location = new System.Drawing.Point(776, 304);
             this.chkTuneNew.Name = "chkTuneNew";
-            this.chkTuneNew.Size = new System.Drawing.Size(214, 17);
+            this.chkTuneNew.Size = new System.Drawing.Size(92, 17);
             this.chkTuneNew.TabIndex = 9;
-            this.chkTuneNew.Text = "Tune new frequencies on free channels";
+            this.chkTuneNew.Text = "Autotune new";
             this.chkTuneNew.UseVisualStyleBackColor = true;
             // 
             // txtBase
@@ -423,11 +428,41 @@
             this.txtBase.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
             this.txtBase.KeyDown += new System.Windows.Forms.KeyEventHandler(this.txtBase_KeyDown);
             // 
+            // btnTuneNew
+            // 
+            this.btnTuneNew.Location = new System.Drawing.Point(695, 300);
+            this.btnTuneNew.Name = "btnTuneNew";
+            this.btnTuneNew.Size = new System.Drawing.Size(75, 23);
+            this.btnTuneNew.TabIndex = 11;
+            this.btnTuneNew.Text = "Tune new";
+            this.btnTuneNew.UseVisualStyleBackColor = true;
+            this.btnTuneNew.Click += new System.EventHandler(this.btnTuneNew_Click);
+            // 
+            // picFreqGraph
+            // 
+            this.picFreqGraph.Location = new System.Drawing.Point(12, 535);
+            this.picFreqGraph.Name = "picFreqGraph";
+            this.picFreqGraph.Size = new System.Drawing.Size(856, 50);
+            this.picFreqGraph.TabIndex = 12;
+            this.picFreqGraph.TabStop = false;
+            // 
+            // tmrRefresh
+            // 
+            this.tmrRefresh.Interval = 500;
+            this.tmrRefresh.Tick += new System.EventHandler(this.tmrRefresh_Tick);
+            // 
+            // tmrAutotune
+            // 
+            this.tmrAutotune.Interval = 10000;
+            this.tmrAutotune.Tick += new System.EventHandler(this.tmrAutotune_Tick);
+            // 
             // frmFreq
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(883, 530);
+            this.ClientSize = new System.Drawing.Size(881, 597);
+            this.Controls.Add(this.picFreqGraph);
+            this.Controls.Add(this.btnTuneNew);
             this.Controls.Add(this.txtBase);
             this.Controls.Add(this.chkTuneNew);
             this.Controls.Add(this.chkLockBase);
@@ -450,6 +485,7 @@
             ((System.ComponentModel.ISupportInitialize)(this.usiBindingSource)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.grdRXs)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.receiverBindingSource)).EndInit();
+            ((System.ComponentModel.ISupportInitialize)(this.picFreqGraph)).EndInit();
             this.ResumeLayout(false);
             this.PerformLayout();
 
@@ -491,5 +527,9 @@
         private System.Windows.Forms.DataGridViewTextBoxColumn lastseenDataGridViewTextBoxColumn;
         private System.Windows.Forms.DataGridViewTextBoxColumn lastburstDataGridViewTextBoxColumn;
         private System.Windows.Forms.DataGridViewTextBoxColumn state;
+        private System.Windows.Forms.Button btnTuneNew;
+        private System.Windows.Forms.Timer tmrRefresh;
+        private System.Windows.Forms.PictureBox picFreqGraph;
+        private System.Windows.Forms.Timer tmrAutotune;
     }
 }

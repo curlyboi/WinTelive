@@ -21,22 +21,16 @@ namespace wintelive
         }
 
 
-        public void logMsg(string str, short verb = 0)
-        {
-            if (verb >= verbosity)
-                txtDebug.Text += string.Format("[{0:HH:mm:ss}] {1}\r\n", DateTime.Now, str);
-        }
-
-
-
         private void btnInitGNR_Click(object sender, EventArgs e)
         {
-            tetraRx.ctx = SynchronizationContext.Current;
+            settings.allScanLow = double.Parse(txtRangeLow.Text);
+            settings.allScanHigh = double.Parse(txtRangeHigh.Text);
 
             gnuradio.init(txtHost.Text, ushort.Parse(txtPort.Text));
             telive.startAll();
             grpGnuradio.Enabled = false;
-            telive.formsInit(this);
+            telive.ffInit(this);
+            telive.fsInit();
 
 
         }

@@ -28,7 +28,6 @@
         /// </summary>
         private void InitializeComponent()
         {
-            this.txtDebug = new System.Windows.Forms.TextBox();
             this.grpGnuradio = new System.Windows.Forms.GroupBox();
             this.txtUdp = new System.Windows.Forms.TextBox();
             this.lblUdp = new System.Windows.Forms.Label();
@@ -37,20 +36,17 @@
             this.lblPort = new System.Windows.Forms.Label();
             this.lblHost = new System.Windows.Forms.Label();
             this.btnInitGNR = new System.Windows.Forms.Button();
-            this.grpSettings = new System.Windows.Forms.GroupBox();
+            this.txtRangeHigh = new System.Windows.Forms.TextBox();
+            this.txtRangeLow = new System.Windows.Forms.TextBox();
+            this.lblRange = new System.Windows.Forms.Label();
             this.grpGnuradio.SuspendLayout();
             this.SuspendLayout();
             // 
-            // txtDebug
-            // 
-            this.txtDebug.Location = new System.Drawing.Point(330, 32);
-            this.txtDebug.Multiline = true;
-            this.txtDebug.Name = "txtDebug";
-            this.txtDebug.Size = new System.Drawing.Size(287, 270);
-            this.txtDebug.TabIndex = 0;
-            // 
             // grpGnuradio
             // 
+            this.grpGnuradio.Controls.Add(this.txtRangeHigh);
+            this.grpGnuradio.Controls.Add(this.txtRangeLow);
+            this.grpGnuradio.Controls.Add(this.lblRange);
             this.grpGnuradio.Controls.Add(this.txtUdp);
             this.grpGnuradio.Controls.Add(this.lblUdp);
             this.grpGnuradio.Controls.Add(this.txtPort);
@@ -60,7 +56,7 @@
             this.grpGnuradio.Controls.Add(this.btnInitGNR);
             this.grpGnuradio.Location = new System.Drawing.Point(12, 12);
             this.grpGnuradio.Name = "grpGnuradio";
-            this.grpGnuradio.Size = new System.Drawing.Size(231, 144);
+            this.grpGnuradio.Size = new System.Drawing.Size(231, 221);
             this.grpGnuradio.TabIndex = 16;
             this.grpGnuradio.TabStop = false;
             this.grpGnuradio.Text = "GNU Radio";
@@ -72,11 +68,12 @@
             this.txtUdp.Size = new System.Drawing.Size(100, 20);
             this.txtUdp.TabIndex = 22;
             this.txtUdp.Text = "7379";
+            this.txtUdp.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
             // 
             // lblUdp
             // 
             this.lblUdp.AutoSize = true;
-            this.lblUdp.Location = new System.Drawing.Point(17, 75);
+            this.lblUdp.Location = new System.Drawing.Point(18, 75);
             this.lblUdp.Name = "lblUdp";
             this.lblUdp.Size = new System.Drawing.Size(78, 13);
             this.lblUdp.TabIndex = 21;
@@ -89,6 +86,7 @@
             this.txtPort.Size = new System.Drawing.Size(100, 20);
             this.txtPort.TabIndex = 20;
             this.txtPort.Text = "42000";
+            this.txtPort.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
             // 
             // txtHost
             // 
@@ -101,7 +99,7 @@
             // lblPort
             // 
             this.lblPort.AutoSize = true;
-            this.lblPort.Location = new System.Drawing.Point(17, 49);
+            this.lblPort.Location = new System.Drawing.Point(18, 49);
             this.lblPort.Name = "lblPort";
             this.lblPort.Size = new System.Drawing.Size(75, 13);
             this.lblPort.TabIndex = 18;
@@ -118,7 +116,7 @@
             // 
             // btnInitGNR
             // 
-            this.btnInitGNR.Location = new System.Drawing.Point(149, 98);
+            this.btnInitGNR.Location = new System.Drawing.Point(149, 172);
             this.btnInitGNR.Name = "btnInitGNR";
             this.btnInitGNR.Size = new System.Drawing.Size(60, 28);
             this.btnInitGNR.TabIndex = 16;
@@ -126,35 +124,49 @@
             this.btnInitGNR.UseVisualStyleBackColor = true;
             this.btnInitGNR.Click += new System.EventHandler(this.btnInitGNR_Click);
             // 
-            // grpSettings
+            // txtRangeHigh
             // 
-            this.grpSettings.Location = new System.Drawing.Point(12, 171);
-            this.grpSettings.Name = "grpSettings";
-            this.grpSettings.Size = new System.Drawing.Size(244, 216);
-            this.grpSettings.TabIndex = 17;
-            this.grpSettings.TabStop = false;
-            this.grpSettings.Text = "Settings";
+            this.txtRangeHigh.Location = new System.Drawing.Point(109, 137);
+            this.txtRangeHigh.Name = "txtRangeHigh";
+            this.txtRangeHigh.Size = new System.Drawing.Size(100, 20);
+            this.txtRangeHigh.TabIndex = 25;
+            this.txtRangeHigh.Text = "430000000";
+            this.txtRangeHigh.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
+            // 
+            // txtRangeLow
+            // 
+            this.txtRangeLow.Location = new System.Drawing.Point(109, 111);
+            this.txtRangeLow.Name = "txtRangeLow";
+            this.txtRangeLow.Size = new System.Drawing.Size(100, 20);
+            this.txtRangeLow.TabIndex = 24;
+            this.txtRangeLow.Text = "420000000";
+            this.txtRangeLow.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
+            // 
+            // lblRange
+            // 
+            this.lblRange.AutoSize = true;
+            this.lblRange.Location = new System.Drawing.Point(18, 114);
+            this.lblRange.Name = "lblRange";
+            this.lblRange.Size = new System.Drawing.Size(90, 13);
+            this.lblRange.TabIndex = 23;
+            this.lblRange.Text = "Frequency range:";
             // 
             // frmMain
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(749, 463);
-            this.Controls.Add(this.grpSettings);
+            this.ClientSize = new System.Drawing.Size(260, 248);
             this.Controls.Add(this.grpGnuradio);
-            this.Controls.Add(this.txtDebug);
             this.Name = "frmMain";
             this.Text = "WinTelive";
             this.Load += new System.EventHandler(this.frmMain_Load);
             this.grpGnuradio.ResumeLayout(false);
             this.grpGnuradio.PerformLayout();
             this.ResumeLayout(false);
-            this.PerformLayout();
 
         }
 
         #endregion
-        private System.Windows.Forms.TextBox txtDebug;
         private System.Windows.Forms.GroupBox grpGnuradio;
         private System.Windows.Forms.TextBox txtUdp;
         private System.Windows.Forms.Label lblUdp;
@@ -163,7 +175,9 @@
         private System.Windows.Forms.Label lblPort;
         private System.Windows.Forms.Label lblHost;
         private System.Windows.Forms.Button btnInitGNR;
-        private System.Windows.Forms.GroupBox grpSettings;
+        private System.Windows.Forms.TextBox txtRangeHigh;
+        private System.Windows.Forms.TextBox txtRangeLow;
+        private System.Windows.Forms.Label lblRange;
     }
 }
 

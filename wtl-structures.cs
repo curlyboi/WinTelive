@@ -1,5 +1,4 @@
 ﻿using System;
-using System.ComponentModel;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -11,40 +10,29 @@ using System.Runtime.InteropServices;
 using System.Net.Sockets;
 using System.Threading;
 using System.Timers;
-using NAudio;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
+using System.Windows.Forms;
 
 namespace wintelive
 {
     public static class tetraRx
     {
         // interface to listen for UDP packets from tetra-rx instances
-        public static SynchronizationContext ctx = null;
 
         public static UdpClient udpCli = new UdpClient(7379);
 
-        public static void Recv(IAsyncResult res)
+        public static void Recv(IAsyncResult ar)
         {
-            byte[] prebuf = new byte[0];
+            IPEndPoint e = new IPEndPoint(IPAddress.Any, 0);
+            byte[] prebuf = udpCli.EndReceive(ar, ref e);
 
-            try
+            telive.parseUdp(prebuf);
+            if (udpCli.Client!=null)
             {
-                IPEndPoint sender = new IPEndPoint(IPAddress.Any, 0);
-                prebuf = udpCli.EndReceive(res, ref sender);
+                Start();
             }
-            catch { }
 
-            ctx.Send(delegate
-            {
-                telive.parseUdp(prebuf);
-            }, null);
-
-            try
-            {
-                udpCli.BeginReceive(new AsyncCallback(Recv), null);
-            }
-            catch { }
         }
 
         public static void Start()
@@ -65,11 +53,13 @@ namespace wintelive
         FileStream fs;
 
         int fpass = 1;
-        ushort usid;
-        bool r2play = false;
-        bool r2rec = false;
+        public bool listenOpen = false;
+        public bool recordOpen = false;
+        DateTime lastData;
+        private telive.receiver parentRx;
+        
 
-        object playLock, recLock;
+        object listenLock, recordLock;
         
 
         [DllImport("libtetradec.dll", CallingConvention = CallingConvention.Cdecl)]
@@ -79,11 +69,11 @@ namespace wintelive
         [DllImport("libtetradec.dll", CallingConvention = CallingConvention.Cdecl)]
         public static extern int tetra_sdec(short[] inp, short[] outp);
 
-        public acelp(ushort nusid)
+        public acelp(telive.receiver myParent)
         {
-            usid = nusid;
-            playLock = new object();
-            recLock = new object();
+            listenLock = new object();
+            recordLock = new object();
+            parentRx = myParent;
             initDll();
         }
 
@@ -129,6 +119,7 @@ namespace wintelive
             byte[] pcmaudio = acelp2pcm(audio);
             if (pcmaudio.Any(w => w != 0))
             {
+                lastData = DateTime.Now;
                 listenInit();
                 listen(pcmaudio);
 
@@ -139,12 +130,14 @@ namespace wintelive
 
         public void listenInit()
         {
-            lock (playLock)
+            lock (listenLock)
             {
-                if (r2play) return;
+                if (listenOpen) return;
                 wp = new BufferedWaveProvider(new WaveFormat(8000, 16, 1));
+                // i know, i know... but the discard effectively prevents crashing on full buffer forever...
+                wp.DiscardOnBufferOverflow = true;
                 telive.msp.AddMixerInput(wp);
-                r2play = true;
+                listenOpen = true;
             }
         }
 
@@ -157,22 +150,38 @@ namespace wintelive
 
         public void listenClose()
         {
-            lock (playLock)
+            lock (listenLock)
             {
-                if (!r2play) return;
+                if (!listenOpen) return;
                 telive.msp.RemoveMixerInput(wp.ToSampleProvider());
                 
                 wp = null;
-                r2play = false;
+                listenOpen = false;
             }
+        }
+
+        public void timeout()
+        {
+            TimeSpan kdy = DateTime.Now - lastData;
+            if (kdy.TotalMilliseconds > settings.timeoutUsiPlay)
+            {
+                listenClose();
+            }
+
+            if (kdy.TotalMilliseconds > settings.timeoutUsiActive)
+            {
+                recordClose();
+            }
+
         }
 
         public void recordInit()
         {
-            lock (recLock)
+            
+            lock (recordLock)
             {
-                if (r2rec) return;
-                string recpath = string.Format(@"c:\a\tetra\rec_{0:yyyyMMdd}_{0:HHmmss}_idx{1}.wav", DateTime.Now, usid);
+                if (recordOpen) return;
+                string recpath = string.Format(@"tetra_{0:yyyyMMdd}_{0:HHmmss}_{1}.wav", DateTime.Now, parentRx.freq);
                 bool writeHead = true;
                 if (File.Exists(recpath))
                 {
@@ -184,7 +193,7 @@ namespace wintelive
                     byte[] wavhead = new byte[] { 0x52, 0x49, 0x46, 0x46, 0xFF, 0xFF, 0xFF, 0xFF, 0x57, 0x41, 0x56, 0x45, 0x66, 0x6D, 0x74, 0x20, 0x10, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x40, 0x1F, 0x00, 0x00, 0x80, 0x3E, 0x00, 0x00, 0x02, 0x00, 0x10, 0x00, 0x64, 0x61, 0x74, 0x61, 0xFF, 0xFF, 0xFF, 0xFF };
                     fs.Write(wavhead, 0, wavhead.Length);
                 }
-                r2rec = true;
+                recordOpen = true;
             }
         }
 
@@ -195,11 +204,11 @@ namespace wintelive
 
         public void recordClose()
         {
-            lock (recLock)
+            lock (recordLock)
             {
-                if (!r2rec) return;
+                if (!recordOpen) return;
                 fs.Close();
-                r2rec = false;
+                recordOpen = false;
             }
         }
 
@@ -525,13 +534,24 @@ namespace wintelive
             }
             return lvf;
         }
+
+        public static double lowRange()
+        {
+            return basefreq - samp_rate / 2;
+        }
+
+        public static double HighRange()
+        {
+            return basefreq + samp_rate / 2;
+        }
+
     }
 
     public static class settings
     {
-        public static double allScanLow = 420000000;
-        public static double allScanHigh = 430000000;
-        public static int allScanTime = 2000;
+        public static double allScanLow = 424000000;
+        public static double allScanHigh = 428000000;
+        public static int allScanTime = 500;
 
         public static int bandScanTime = 1000;
 
@@ -583,6 +603,7 @@ namespace wintelive
             public double offset;
             public DateTime lastseen { get; set; }
             public DateTime lastburst { get; set; }
+            public DateTime firstTuned;
             public rx_mode mode;
             public string state
             {
@@ -610,10 +631,14 @@ namespace wintelive
             }
             public uint master;
 
+            public acelp spl;
+
+
             public receiver(ushort newid)
             {
                 id = newid;
                 mode = rx_mode.OFF;
+                spl = new acelp(this);
             }
 
             public bool getOffset()
@@ -639,6 +664,12 @@ namespace wintelive
                 if (vysl)
                 {
                     offset = noff;
+                    freqRefDel();
+                    if (mode == rx_mode.TUNED)
+                    {
+                        firstTuned = DateTime.Now;
+                        freqRefAdd();
+                    }
                 }
                 return vysl;
             }
@@ -671,9 +702,35 @@ namespace wintelive
             {
                 // set mode of receiver
                 mode = nmode;
-                if (mode == rx_mode.OFF)
+                switch (mode)
                 {
-                    lastburst = DateTime.MinValue;
+                    case rx_mode.OFF:
+                        firstTuned = default(DateTime);
+                        freqRefDel();
+                        break;
+
+                    case rx_mode.TUNED:
+                        firstTuned = DateTime.Now;
+                        freqRefAdd();
+                        break;
+                }
+            }
+
+            public void freqRefAdd()
+            {
+                foreach (frequency fr in freqs.Where(w => w.dl_freq == freq))
+                {
+                    fr.tuned(id);
+                }
+
+            }
+
+            public void freqRefDel()
+            {
+                lastburst = default(DateTime);
+                foreach (frequency fr in freqs.Where(w => w.tunedrx == id).ToList())
+                {
+                    fr.detuned();
                 }
             }
 
@@ -681,7 +738,12 @@ namespace wintelive
             {
                 // just overlay method for setting offset
                 double noff = nfreq - gnuradio.basefreq;
-                return setOffset(noff);
+                bool vysledek = setOffset(noff);
+                if (vysledek)
+                {
+                    updateFix();
+                }
+                return vysledek;
             }
 
             public void updateFix()
@@ -714,7 +776,6 @@ namespace wintelive
             public DateTime lastplay { get; set; }
             public ushort cid { get; set; }
             public ushort lastrx { get; set; }
-            public acelp spl;
 
             public usi(ushort newid)
             {
@@ -723,7 +784,6 @@ namespace wintelive
                 encr = false;
                 active = false;
                 playing = false;
-                spl = new acelp(id);
             }
 
             public void seen(ushort rx)
@@ -767,25 +827,23 @@ namespace wintelive
                 active = true;
             }
 
-            public void play()
+            public void play(ushort rxid)
             {
                 // there is a voice comming from this USI
                 playing = true;
                 lastplay = DateTime.Now;
             }
-            
+
             public void stop()
             {
                 // voice ceased
                 playing = false;
-                spl.listenClose();
             }
 
             public void deactivate()
             {
                 // USI forgotten
                 active = false;
-                spl.recordClose();
             }
 
         }
@@ -806,8 +864,8 @@ namespace wintelive
         }
         public class frequency
         {
-            public uint mcc { get; }
-            public uint mnc { get; }
+            public uint mcc { get; set; }
+            public uint mnc { get; set; }
             public double dl_freq { get; }
             public double ul_freq { get; }
             public List<uint> la;
@@ -882,14 +940,13 @@ namespace wintelive
                         receiver rx = rxs.FirstOrDefault(w => w.id == i);
                         rx.setMode(rx_mode.OFF);
                     }
-                    double ufreq = startfreq + (gnuradio.receivers - 1) * gnuradio.cbw;
-                    double nbase = (ufreq + startfreq) / 2;
+                    double nbase = startfreq + (gnuradio.receivers / 2) * gnuradio.cbw;
 
                     baseSetSafe(nbase);
 
                     for (ushort i = 1; i <= gnuradio.receivers; i++)
                     {
-                        if (rxTune(i, startfreq + (i - 1) * gnuradio.cbw))
+                        if (rxTune(i, nbase + (i - 6) * gnuradio.cbw))
                             rxs.FirstOrDefault(w => w.id == i).setMode(rx_mode.ALLSCAN);
                     }
                 }
@@ -900,18 +957,14 @@ namespace wintelive
 
             public void step()
             {
-                double nlfreq, nufreq;
+                double nbase;
                 lock (scanLock)
                 {
-                    double lfreq = rxs.FirstOrDefault(w => w.id == 1).freq;
-                    double ufreq = rxs.FirstOrDefault(w => w.id == gnuradio.receivers).freq;
-                    nlfreq = lfreq + gnuradio.receivers * gnuradio.cbw;
-                    nufreq = ufreq + gnuradio.receivers * gnuradio.cbw;
-                    double nbase = (nufreq + nlfreq) / 2;
+                    nbase = gnuradio.basefreq + gnuradio.receivers * gnuradio.cbw;
                     baseSetSafe(nbase);
                 }
 
-                if (nufreq >= stopfreq)
+                if (nbase + (gnuradio.receivers / 2) * gnuradio.cbw > stopfreq)
                 {
                     stop();
                 }
@@ -931,10 +984,7 @@ namespace wintelive
 
             public void tmrScan_tick(object source, ElapsedEventArgs e)
             {
-                tetraRx.ctx.Send(delegate
-                {
-                    step();
-                }, null);
+                step();
             }
         }
         public class bandScanner
@@ -954,7 +1004,7 @@ namespace wintelive
                 lock (scanLock)
                 {
                     receiver scanner = rxs.FirstOrDefault(w => w.id == scanRx);
-                    scanner.mode = rx_mode.BANDSCAN;
+                    scanner.setMode(rx_mode.BANDSCAN);
                     double startf = gnuradio.lowestValidFreq();
                     rxTune(scanner.id, startf);
 
@@ -991,45 +1041,51 @@ namespace wintelive
 
             public void tmrScan_tick(object source, ElapsedEventArgs e)
             {
-                tetraRx.ctx.Send(delegate
-                {
-                    step();
-                }, null);
+                step();
             }
         }
 
-        public static BindingList<receiver> rxs = new BindingList<receiver>();
-        public static BindingList<usi> usis = new BindingList<usi>();
-        public static BindingList<frequency> freqs= new BindingList<frequency>();
+        public static List<receiver> rxs = new List<receiver>();
+        public static List<usi> usis = new List<usi>();
+        public static List<frequency> freqs = new List<frequency>();
         public static bandScanner bas;
         public static allScanner als;
         public static System.Timers.Timer janitor = new System.Timers.Timer(500);
         public static frmFreq ff;
         public static frmMain fm;
+        public static frmSDS fs;
         public static WaveFormat wf;
         public static MixingSampleProvider msp;
         public static IWavePlayer wout;
 
+        public static void fmInit()
+        {
+            fm = new frmMain();
+            fm.ShowDialog();
+
+        }
+
+        public static void ffInit(frmMain orig)
+        {
+
+            ff = new frmFreq();
+            ff.Show();
+        }
+
+        public static void fsInit()
+        {
+            fs = new frmSDS();
+            fs.Show();
+        }
+
         public static void startAll()
         {
-            createAllUsis(63);
-
             rxEnumAll();
             tetraRx.Start();
 
             janitorStart();
 
             audioInit();
-
-        }
-
-        public static void createAllUsis(ushort max)
-        {
-            for (ushort i = 0; i <= max;i++)
-            {
-                usi newus = new usi(i);
-                usis.Add(newus);
-            }
         }
 
         public static void audioInit()
@@ -1044,34 +1100,18 @@ namespace wintelive
 
         public static void janitorStart()
         {
+            janitor.SynchronizingObject = fm;
             janitor.Elapsed += new ElapsedEventHandler(janitorCall);
             janitor.Enabled = true;
         }
 
         public static void janitorCall(object source, ElapsedEventArgs e)
         {
-            tetraRx.ctx.Send(delegate
-            {
-                // internal structures cleanup
-                timeoutUsi();
-                timeoutRx();
-                timeoutSsi();
-                if (ff.chkTuneNew.Checked)
-                    tuneAllFree();
-
-                // gui handle
-                ff.refreshGrds();
-                if (!ff.txtBase.Focused)
-                    ff.txtBase.Text = string.Format("{0}", gnuradio.basefreq);
-            }, null);
-        }
-
-        public static void formsInit(frmMain orig)
-        {
-            fm = orig;
-
-            ff = new frmFreq();
-            ff.Show();
+            // internal structures cleanup
+            timeoutUsi();
+            timeoutRx();
+            timeoutSsi();
+            timeoutMixer();
         }
 
         public static void rxEnumAll()
@@ -1088,7 +1128,7 @@ namespace wintelive
         {
             DateTime ted = DateTime.Now;
 
-            //List<usi> delQue = new List<usi>();
+            List<usi> delQue = new List<usi>();
             foreach (usi ucho in usis)
             {
                 if (ucho.playing)
@@ -1111,11 +1151,15 @@ namespace wintelive
                     // destroy anything with inactivity for more than 30s
                     if (sping.TotalMilliseconds > settings.timeoutUsiExist)
                     {
-                        ucho.lastrx = 0;
-                        ucho.cid = 0;
+                        delQue.Add(ucho);
                     }
 
                 }
+            }
+
+            foreach (usi ucho in delQue)
+            {
+                usis.Remove(ucho);
             }
 
 
@@ -1137,128 +1181,62 @@ namespace wintelive
 
             foreach (receiver rx in rxs.Where(w => w.mode == rx_mode.TUNED))
             {
-                if (rx.lastburst == default(DateTime)) continue;
+                rx.spl.timeout();
 
-                TimeSpan sburst = ted - rx.lastburst;
-                if (sburst.TotalMilliseconds > settings.timeoutRxTuned)
+                if (rx.lastburst == default(DateTime))
                 {
-                    rx.setMode(rx_mode.OFF);
+                    TimeSpan sburst = ted - rx.firstTuned;
+                    if (sburst.TotalMilliseconds > settings.timeoutRxTuned)
+                    {
+                        List<frequency> deadFreqs = freqs.Where(w => w.dl_freq == rx.freq).ToList();
+                        rx.setMode(rx_mode.OFF);
+                        // if we didnt hear anything on that frequency, we might as well forget it
+                        deadFreqs.ForEach(w => freqs.Remove(w));
+
+                    }
                 }
+            }
+        }
+
+        public static void timeoutMixer()
+        {
+            // clear mixer if nothing is playing
+            if (!rxs.Any(w => w.spl.listenOpen))
+            {
+                msp.RemoveAllMixerInputs();
             }
         }
 
         public static void tuneAllFree()
         {
-            int freeRxs = rxs.Count(w => w.mode == rx_mode.OFF);
-
-            IEnumerable<double> untuned = freqs.Where(w => w.tunedrx == 0).Select(w => w.dl_freq).Distinct();
-            IEnumerable<double> tuned = freqs.Where(w => w.tunedrx != 0).Select(w => w.dl_freq).Distinct();
-            int untestedc = untuned.Count();
-
-            if (untestedc > 0 && freeRxs > 0)
+            // first only frequencies that do not require baseband change
+            do
             {
-                IEnumerable<double> freqstotry = Enumerable.Empty<double>();
-                int found = 0;
+                receiver freeRx = rxs.Where(w => w.mode == rx_mode.OFF).OrderBy(w => w.id).FirstOrDefault();
+                // ha! this mighty query first selects freqs with known MCC and MNC, and then orders them by the ascending freq
+                frequency freeFr = freqs.Where(w => w.tunedrx == 0 && gnuradio.freqFitsToBase(w.dl_freq)).OrderByDescending(w => Math.Sign(w.mcc) * Math.Sign(w.mnc)).ThenBy(w => w.dl_freq).FirstOrDefault();
+                if (freeRx == null || freeFr == null)
+                    break;
+                rxTune(freeRx.id, freeFr.dl_freq);
+                freeRx.setMode(rx_mode.TUNED);
+            } while (true);
 
-                if (tuned.Count() > 0)
-                {
-                    // we already have some tuned freqs
-                    double minfr = tuned.Min();
-                    double maxfr = tuned.Max();
-                    // so first try to tune those, that fit between the tuned range
-                    freqstotry = untuned.Where(w => w >= minfr && w <= maxfr).Take(freeRxs);
-                    untuned = untuned.Except(freqstotry);
-                    found = freqstotry.Count();
-                }
-
-                if (found < freeRxs)
-                {
-                    // then check those who will not require base freq retune
-                    IEnumerable<double> smore = untuned.Where(w => gnuradio.freqFitsToBase(w)).Take(freeRxs - found);
-                    freqstotry = freqstotry.Concat(smore);
-                    untuned = untuned.Except(smore);
-                    found = freqstotry.Count();
-                }
-
-                // here we have new candidates of maximum exact count of free receivers
-                foreach (double frtotune in freqstotry)
-                {
-                    receiver trx = rxs.FirstOrDefault(w => w.mode == rx_mode.OFF);
-                    rxTune(trx.id, frtotune);
-                    trx.setMode(rx_mode.TUNED);
-                    
-                }
-
-                // TODO: something fishy below here, it's tunning to aggresively even if it
-                // only should tune if we won't lose tuned channels due to baseband change
-                
-                // if we still have some more channels to try
-                foreach (double frtotune in untuned)
-                {
-                    receiver frx = rxs.FirstOrDefault(w => w.mode == rx_mode.OFF);
-                    if (frx == null)
-                    {
-                        // ran out of free rxs
-                        break;
-                    }
-
-                    // safely tune the frequency (e.g. you may shift baseband, but not so much that we lose channels)
-                    rxTuneSafe(frx.id, frtotune);
-                }
-            }
-        }
-
-        public static void bandScanStart(ushort rxid)
-        {
-            if (bas == null)
+            // then those, that WILL change baseband, but not so much that we lose other active channels
+            do
             {
-                bas = new bandScanner(rxid);
-                bas.start();
-            }
-        }
+                receiver freeRx = rxs.Where(w => w.mode == rx_mode.OFF).OrderBy(w => w.id).FirstOrDefault();
+                frequency freeFr = freqs.Where(w => w.tunedrx == 0 && gnuradio.baseCalc(w.dl_freq, rxs.Where(y => y.mode == rx_mode.TUNED).Select(y => y.freq), false) != -1).OrderBy(w => Math.Abs(gnuradio.basefreq - w.dl_freq)).FirstOrDefault();
+                if (freeRx == null || freeFr == null)
+                    break;
+                rxTuneSafe(freeRx.id, freeFr.dl_freq, false);
+            } while (true);
 
-        public static void bandScanStop()
-        {
-            if (bas != null)
-            {
-                bas.stop();
-                bas = null;
-            }
-        }
-
-        public static void allScanStart(double lf, double uf)
-        {
-            als = new allScanner(lf, uf);
-            als.start();
-        }
-
-        public static void allScanStop()
-        {
-            als.stop();
-            als = null;
         }
 
         public static bool rxTune(ushort rxid, double nfreq)
         {
             receiver trx = rxs.FirstOrDefault(w => w.id == rxid);
-            if (trx.setFreq(nfreq))
-            {
-                foreach (frequency of in freqs.Where(w => w.tunedrx == rxid))
-                {
-                    // delete rx reference from prevs requencies
-                    of.detuned();
-                }
-                foreach (frequency of in freqs.Where(w => w.dl_freq == nfreq))
-                {
-                    // add rx reference from current requenciy
-                    of.tuned(rxid);
-                }
-                return true;
-            }
-            else
-            {
-                return false;
-            }
+            return trx.setFreq(nfreq);
         }
 
         public static bool rxTuneSafe(ushort rxid, double nfreq, bool force = false)
@@ -1277,7 +1255,7 @@ namespace wintelive
                 if (nbase != -1)
                 {
                     // turn the rx off temporarily
-                    trx.setMode(rx_mode.OFF);
+                    //trx.setMode(rx_mode.OFF);
                     // set the new base
                     vysledek = baseSetSafe(nbase);
                     // set new rx freq
@@ -1303,16 +1281,8 @@ namespace wintelive
             bool vysledek = true;
             foreach (receiver rtrx in rtr)
             {
-                if (gnuradio.freqFitsToBase(rtrx.freqFix))
-                {
-                    // if the receiver is close enough to base then just re-apply the freq
-                    vysledek &= rtrx.applyFix();
-                }
-                else
-                {
-                    // if it's too far then disable it
-                    rtrx.setMode(rx_mode.OFF);
-                }
+                // if the receiver is close enough to base then just re-apply the freq
+                vysledek &= rtrx.applyFix();
             }
             return vysledek;
         }
@@ -1339,8 +1309,7 @@ namespace wintelive
             if (optim != -1 && optim != gnuradio.basefreq)
             {
                 // if we got some and it's different from current
-                vysledek &= gnuradio.baseSet(optim);
-                vysledek &= rxApplyFix(used);
+                vysledek = baseSetSafe(optim);
             }
 
             return vysledek;
@@ -1348,81 +1317,87 @@ namespace wintelive
 
         public static bool baseSetSafe(double nbase)
         {
+            bool vysledek = true;
             // set the new base
-            gnuradio.baseSet(nbase);
+            vysledek &= gnuradio.baseSet(nbase);
+            // switch off all channels that won't fit after the baseband shift
+            foreach (receiver rx in rxs.Where(w => w.mode == rx_mode.TUNED && !gnuradio.freqFitsToBase(w.freq)))
+            {
+                rx.setMode(rx_mode.OFF);
+            }
             // change all online channels
-            rxApplyFix(rxs.Where(w => w.mode == rx_mode.TUNED));
-            // calculate all offline channels
+            vysledek &= rxApplyFix(rxs.Where(w => w.mode == rx_mode.TUNED));
+            // calculate all offline/scanning channels
             rxUpdateFix(rxs.Where(w => w.mode != rx_mode.TUNED));
+
 
             return true;
         }
 
-        public static void rxChangeModeHelper(ushort rxid)
+        public static bool rxChangeMode(ushort rxid, rx_mode newmode)
         {
-            receiver rxo = rxs.FirstOrDefault(w => w.id == rxid);
-            rx_mode old = rxo.mode;
-            switch (old)
+            if (rxs.Any(w => w.mode == rx_mode.ALLSCAN))
             {
-                case rx_mode.BANDSCAN:
-                    bandScanStop();
-                    break;
+                als.stop();
+                als = null;
+            }
 
+            receiver rxo = rxs.FirstOrDefault(w => w.id == rxid);
+
+            if (rxo.mode == rx_mode.BANDSCAN)
+            {
+                bas.stop();
+                bas = null;
+            }
+
+            if (rxo.mode == rx_mode.TUNED)
+                rxo.setMode(rx_mode.OFF);
+
+            //at this moment, the receiver should be in OFF mode with all frequencies unlinked
+
+            switch (newmode)
+            {
                 case rx_mode.ALLSCAN:
-                    allScanStop();
+                    // use all receivers for full scan
+                    als = new allScanner(settings.allScanLow, settings.allScanHigh);
+                    als.start();
+                    break;
+
+                case rx_mode.BANDSCAN:
+                    // use this receiver for scanning the band
+                    if (rxs.Any(w => w.mode == rx_mode.BANDSCAN))
+                    {
+                        // we only need one bandscan
+                        return false;
+                    }
+                    else
+                    {
+                        bas = new bandScanner(rxid);
+                        bas.start();
+                    }
+                    break;
+
+                case rx_mode.TUNED:
+                    // update the fixed frequency to match reality
+                    rxo.updateFix();
+                    rxo.setMode(rx_mode.TUNED);
                     break;
             }
-
-
-        }
-
-        public static bool rxChangeModeScanband(ushort rxid)
-        {
-            if (rxs.Any(w => w.mode == rx_mode.BANDSCAN))
-            {
-                // there is already one bandscanner, we don't need more
-                return false;
-            }
-            else {
-                rxChangeModeHelper(rxid);
-                bandScanStart(rxid);
-                return true;
-            }
-        }
-
-        public static void rxChangeModeScan(double lf, double uf)
-        {
-            //rxChangeModeHelper()
-
-            als = new allScanner(lf, uf);
-            als.start();
-        }
-
-        public static void rxChangeModeTuned(ushort rxid)
-        {
-            rxChangeModeHelper(rxid);
-            receiver rxo = rxs.FirstOrDefault(w => w.id == rxid);
-            rxo.setMode(rx_mode.TUNED);
-
-            foreach (frequency fr in freqs.Where(w => w.dl_freq == rxo.freq))
-            {
-                fr.tunedrx = rxid;
-            }
-
+            return true;
 
         }
-
-        public static void rxChangeModeOff(ushort rxid)
+        
+        public static int guiFreqToX(double freq)
         {
-            rxChangeModeHelper(rxid);
-            receiver rxo = rxs.FirstOrDefault(w => w.id == rxid);
-            rxo.setMode(rx_mode.OFF);
+            double fLen = settings.allScanHigh - settings.allScanLow;
+            double pLen = 850;
+            double ratio = fLen / pLen;
+            double min = freq - settings.allScanLow;
+            
+            // if the user enter a little too small number, we drop the 0
+            if (min < 0) min = 0;
 
-            foreach (frequency fr in freqs.Where(w => w.tunedrx == rxid))
-            {
-                fr.tunedrx = 0;
-            }
-
+            return Convert.ToInt16(min / ratio);
         }
 
         private static void cidaddssi(ushort cid, uint ssi)
@@ -1431,6 +1406,17 @@ namespace wintelive
             {
                 usak.addssi(ssi);
             }
+        }
+
+        private static usi findOrCreateUsi(ushort id)
+        {
+            usi ucho = usis.FirstOrDefault(w => w.id == id);
+            if (ucho == null)
+            {
+                ucho = new usi(id);
+                usis.Add(ucho);
+            }
+            return ucho;
         }
 
         private static Dictionary<string, string> TETelements(string buf)
@@ -1515,7 +1501,7 @@ namespace wintelive
             if (TETstat.ContainsKey("IDX"))
             {
                 idx = ushort.Parse(TETstat["IDX"]);
-                idxo = usis.FirstOrDefault(w => w.id == idx);
+                idxo = findOrCreateUsi(idx);
                 if (rxo.mode == rx_mode.TUNED)
                 {
                     idxo.seen(rx);
@@ -1547,7 +1533,7 @@ namespace wintelive
                 case "NETINFO1":
                 case "FREQINFO1":
                 case "FREQINFO2":
-                    if (mcc == 0 || mnc == 0 || dl_freq == 0) break;
+                    if (dl_freq == 0) break;
                     freq_reason fr = freq_reason.UNKNOWN;
                     switch(func)
                     {
@@ -1563,20 +1549,19 @@ namespace wintelive
 
                     frequency newfreq = new frequency(mcc, mnc, dl_freq, ul_freq, la, ccode, fr);
 
-                    frequency oldfreq = freqs.FirstOrDefault(w => w.dl_freq == dl_freq && w.ul_freq == ul_freq);
-
-                    receiver trxo = rxs.FirstOrDefault(w => w.freq == dl_freq && w.id == rx);
+                    frequency oldfreq = freqs.FirstOrDefault(w => w.dl_freq == dl_freq);
 
                     if (oldfreq == null)
                     {
-                        if (trxo != null)
-                            newfreq.tuned(trxo.id);
                         freqs.Add(newfreq);
                     }
                     else
                     {
-                        if (trxo != null)
-                            oldfreq.tuned(trxo.id);
+                        if (oldfreq.mcc == 0 || oldfreq.mnc == 0)
+                        {
+                            oldfreq.mcc = mcc;
+                            oldfreq.mnc = mnc;
+                        }
                         oldfreq.addla(la);
                         oldfreq.addcc(ccode);
                         oldfreq.reason = fr;
@@ -1628,7 +1613,11 @@ namespace wintelive
                         string dat = buf.Substring(poz);
                         poz = dat.IndexOf("]");
                         dat = dat.Substring(0, poz);
-                        fm.logMsg(dat);
+                        fs.BeginInvoke((MethodInvoker)delegate
+                        {
+                            fs.addMsg(dat);
+                        });
+                        
                         
                     }
                     //string data = TETstat["DATA"];
@@ -1694,7 +1683,7 @@ namespace wintelive
             if (TETstat.ContainsKey("TRA"))
             {
                 idx = ushort.Parse(TETstat["TRA"], NumberStyles.HexNumber);
-                idxo = usis.FirstOrDefault(w => w.id == idx);
+                idxo = findOrCreateUsi(idx);
                 idxo.seen(rx);
             }
             else
@@ -1703,8 +1692,8 @@ namespace wintelive
                 return;
             }
 
-            idxo.play();
-            idxo.spl.processAcelp(payload);
+            idxo.play(rx);
+            rxo.spl.processAcelp(payload);
 
             // if ssis !encr
 

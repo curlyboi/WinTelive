@@ -31,28 +31,14 @@ namespace wintelive
         {
             telive.receiver rx = (telive.receiver)cmbRx.SelectedItem;
             telive.rx_mode mode = (telive.rx_mode)cmbMode.SelectedItem;
-            switch (mode)
+            if (!telive.rxChangeMode(rx.id, mode))
             {
-                case telive.rx_mode.BANDSCAN:
-                    if (!telive.rxChangeModeScanband(rx.id))
-                    {
-                        MessageBox.Show("Some receiver is already in band scanning mode.");
-                    }
-                    break;
-
-                case telive.rx_mode.ALLSCAN:
-                    telive.rxChangeModeScan(settings.allScanLow, settings.allScanHigh);
-                    break;
-
-                case telive.rx_mode.OFF:
-                    telive.rxChangeModeOff(rx.id);
-                    break;
-
-                case telive.rx_mode.TUNED:
-                    telive.rxChangeModeTuned(rx.id);
-                    break;
+                MessageBox.Show("Some receiver is already in band scanning mode.");
             }
-            this.Close();
+            else
+            {
+                this.Close();
+            }
         }
     }
 }
